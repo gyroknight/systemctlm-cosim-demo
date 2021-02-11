@@ -35,9 +35,9 @@ HAVE_VERILOG=y
 HAVE_VERILOG_VERILATOR?=n
 HAVE_VERILOG_VCS=y
 else
-SYSTEMC ?= /usr/local/systemc-2.3.1/
+SYSTEMC ?= /usr/local/systemc-2.3.3/
 SYSTEMC_INCLUDE ?=$(SYSTEMC)/include/
-SYSTEMC_LIBDIR ?= $(SYSTEMC)/lib-linux64
+SYSTEMC_LIBDIR ?= $(SYSTEMC)/lib
 # In case your TLM-2.0 installation is not bundled with
 # with the SystemC one.
 # TLM2 ?= /opt/systemc/TLM-2009-07-15
