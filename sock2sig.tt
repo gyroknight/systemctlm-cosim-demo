@@ -1,0 +1,75 @@
+template <unsigned int BUSWIDTH>
+inline Sock2Sig<BUSWIDTH>::Sock2Sig(int readyDelay, sc_module_name moduleName)
+    : sc_module(moduleName),
+      nextBitMask(1),
+      byteOffset(0),
+      readyDelay(readyDelay) {
+  outputSigs.init(BUSWIDTH);
+  inputSock.register_b_transport(Sock2Sig<BUSWIDTH>::inputSock_b_transport);
+  SC_THREAD(Sock2Sig<BUSWIDTH>::updateOutput);
+}
+
+template <unsigned int BUSWIDTH>
+inline void Sock2Sig<BUSWIDTH>::inputSock_b_transport(
+    tlm::tlm_generic_payload& trans, sc_time& delay) {
+  // Should only propagate writes
+  if (trans.get_command() != tlm::tlm_command::TLM_WRITE_COMMAND ||
+      trans.get_data_length() <= 0) {
+    std::cout << "Transaction is invalid, discarding..." << std::endl;
+    return;
+  }
+
+  // Cache received data for later (may be wider than the bus)
+  auto data = std::make_unique<std::vector<uint8_t>>(trans.get_data_length());
+  memcpy(data->data(), trans.get_data_ptr(), data->size());
+
+  buffer.push(std::move(data));
+  dataAvailable.notify();
+}
+
+template <unsigned int BUSWIDTH>
+inline void Sock2Sig<BUSWIDTH>::updateOutput() {
+  while (true) {
+    // Deassert data ready signal
+    dataReady = false;
+
+    if (!currentData) {
+      // No new data is available to update output, wait until more is sent
+      wait(dataAvailable);
+      currentData = std::move(buffer.pop());
+    }
+
+    uint8_t currentByte = currentData[byteOffset];
+
+    // Set output signal states based on bit value
+    for (long ii = 0; ii < BUSWIDTH; ii++) {
+      outputSigs[ii] = (nextBitMask & currentByte) != 0;
+      if (nextBitMask == (1 << 7)) {
+        currentByte = currentData[++byteOffset];
+        nextBitMask = 1;
+      } else {
+        nextBitMask <<= 1;
+      }
+    }
+
+    // Read all the data in currentData, replace with next packet in queue or
+    // clear, and reset location state
+    if (byteOffset >= currentData->size()) {
+      if (buffer.empty()) {
+        currentData.reset();
+      } else {
+        currentData = std::move(buffer.pop());
+      }
+
+      byteOffset = 0;
+    }
+
+    // Wait readyDelay cycles before asserting data is ready for reading
+    wait(readyDelay);
+
+    dataReady = true;
+
+    // Wait for peripheral to read and acknowledge data
+    wait(assertRead.posedge_event());
+  }
+}
